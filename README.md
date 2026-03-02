@@ -6,6 +6,7 @@
 
 ## ✨ 功能特点
 
+- ✅ **跨平台支持** - Windows / Mac / Linux 全兼容
 - ✅ **自动发现** - 扫描文件夹中的所有 PDF 发票文件
 - ✅ **信息提取** - 从中国增值税电子发票中提取关键信息：
   - 发票号码
@@ -46,22 +47,36 @@ pip install pdfplumber openpyxl
 
 ### 基础用法
 
+**Windows:**
 ```bash
-# 整理文件夹中的发票（默认输出到 已整理 文件夹）
 python scripts/organize_invoices.py "C:/path/to/invoices"
-
-# 指定输出文件夹名称
 python scripts/organize_invoices.py "C:/path/to/invoices" "已报销"
+```
+
+**Mac/Linux:**
+```bash
+python scripts/organize_invoices.py "/path/to/invoices"
+python scripts/organize_invoices.py "/path/to/invoices" "已报销"
 ```
 
 ### 示例
 
+**Windows:**
 ```bash
 # 整理 D 盘发票文件夹
 python scripts/organize_invoices.py "D:/发票/2026 年 2 月"
 
 # 输出到指定文件夹
 python scripts/organize_invoices.py "D:/发票/2026 年 2 月" "2 月已报销"
+```
+
+**Mac:**
+```bash
+# 整理桌面发票文件夹
+python scripts/organize_invoices.py "~/Desktop/invoices"
+
+# 输出到指定文件夹
+python scripts/organize_invoices.py "~/Downloads/2026-02-invoices" "已报销"
 ```
 
 ## 📁 输出说明
@@ -100,6 +115,22 @@ python scripts/organize_invoices.py "D:/发票/2026 年 2 月" "2 月已报销"
 2. **原文件保护**：工具不会修改原始 PDF 文件，仅复制并重命名
 3. **Excel 模板**：使用内置模板 `templates/费用报销清单明细表-demo.xlsx`
 4. **失败处理**：提取失败的发票会记录在控制台输出中
+5. **路径格式**：
+   - Windows 使用 `C:/path/to/folder` 或 `C:\path\to\folder`
+   - Mac/Linux 使用 `/path/to/folder` 或 `~/folder`
+
+## 💻 跨平台说明
+
+| 系统 | 支持状态 | 备注 |
+|------|----------|------|
+| Windows 10/11 | ✅ 完全支持 | 控制台编码自动处理 |
+| macOS 10.15+ | ✅ 完全支持 | 需安装 Python 3.8+ |
+| Linux (Ubuntu/Debian) | ✅ 完全支持 | 需安装 Python 3.8+ |
+
+**依赖安装（所有平台）：**
+```bash
+pip install pdfplumber openpyxl
+```
 
 ## 🛠️ 开发
 

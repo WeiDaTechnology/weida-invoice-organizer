@@ -16,6 +16,7 @@ from datetime import datetime
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+# Mac/Linux 默认使用 UTF-8，无需特殊处理
 
 
 def extract_invoice_info(pdf_path: str) -> dict:
