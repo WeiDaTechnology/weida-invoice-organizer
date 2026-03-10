@@ -17,17 +17,32 @@
 """
 
 import sys
-import json
 import shutil
 from pathlib import Path
-from datetime import datetime
-from openpyxl import load_workbook
+from typing import Optional
+from openpyxl import Workbook, load_workbook
 
 # 导入提取脚本
 from extract_invoice_info import extract_invoice_info
 
 # 默认模板路径（技能内部）
 DEFAULT_TEMPLATE = Path(__file__).parent.parent / "templates" / "费用报销清单明细表-demo.xlsx"
+
+
+def is_generated_output_file(root_folder: Path, pdf_path: Path, output_folder_name: str) -> bool:
+    """
+    排除历史整理结果，避免重复运行时把已整理文件再次当作输入。
+    """
+    try:
+        relative_parts = pdf_path.relative_to(root_folder).parts
+    except ValueError:
+        return False
+
+    if not relative_parts:
+        return False
+
+    top_level_dir = relative_parts[0]
+    return top_level_dir == output_folder_name or top_level_dir.startswith("已整理")
 
 
 def process_invoices(folder_path: str, output_folder_name: str = "已整理"):
@@ -51,8 +66,11 @@ def process_invoices(folder_path: str, output_folder_name: str = "已整理"):
     
     print(f"输出文件夹：{output}")
     
-    # 找出所有 PDF 文件（排除输出文件夹中的）
-    pdf_files = [f for f in folder.glob("*.pdf") if f.parent != output]
+    # 递归找出所有 PDF 文件，方便直接整理包含子文件夹的报销目录。
+    pdf_files = [
+        f for f in folder.rglob("*.pdf")
+        if not is_generated_output_file(folder, f, output_folder_name)
+    ]
     if not pdf_files:
         return {"error": f"未找到 PDF 文件：{folder_path}"}
     
@@ -95,8 +113,8 @@ def process_invoices(folder_path: str, output_folder_name: str = "已整理"):
         
         # 生成新文件名：金额_摘要_发票号码.pdf
         amount_str = f"{info['amount']:.2f}".replace('.', '_')
-        summary = info.get('item_name') or info.get('seller_name', '未知')[:10]
-        summary = summary.replace('/', '_').replace('\\', '_')  # 移除非法字符
+        summary = info.get('item_name') or info.get('seller_name', '未知')
+        summary = sanitize_filename_part(summary, max_length=20)
         
         new_name = f"{amount_str}_{summary}_{info['invoice_number']}.pdf"
         new_path = output / new_name
@@ -134,12 +152,41 @@ def process_invoices(folder_path: str, output_folder_name: str = "已整理"):
             export_to_excel(invoices, str(DEFAULT_TEMPLATE), excel_output)
             print(f"\n✅ Excel 已导出：{excel_output}")
         else:
-            print(f"\n⚠️ 未找到默认模板，跳过 Excel 导出")
+            export_to_excel(invoices, None, excel_output)
+            print(f"\n✅ 未找到模板，已使用内置表头导出 Excel：{excel_output}")
     
     return stats
 
 
-def export_to_excel(invoices: list, template_path: str, output_path: str):
+def sanitize_filename_part(value: str, max_length: int = 20) -> str:
+    """
+    清理文件名片段，避免 Windows 非法字符和多余空白。
+    """
+    if not value:
+        return "未知"
+
+    invalid_chars = '<>:"/\\|?*'
+    sanitized = value
+    for ch in invalid_chars:
+        sanitized = sanitized.replace(ch, "_")
+
+    sanitized = " ".join(sanitized.split()).strip(" .")
+    return (sanitized or "未知")[:max_length]
+
+
+def create_default_workbook():
+    """
+    创建一个可直接写入的默认报销清单工作簿。
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "费用报销清单"
+    ws.append(["编号", "时间", "用途（详细用途）", "金额", "责任人", "发票号", "摘要"])
+    ws.append([None, None, "合计：", "=SUM(D2:D2)", None, None, None])
+    return wb, ws
+
+
+def export_to_excel(invoices: list, template_path: Optional[str], output_path: str):
     """
     将发票信息导出到 Excel 模板
     
@@ -154,9 +201,12 @@ def export_to_excel(invoices: list, template_path: str, output_path: str):
     
     最后一行是统计行：合计：总金额（支持公式）
     """
-    # 加载模板
-    wb = load_workbook(template_path)
-    ws = wb.active
+    # 优先使用模板；缺失时自动创建默认工作簿，避免技能因模板文件缺失而失效。
+    if template_path:
+        wb = load_workbook(template_path)
+        ws = wb.active
+    else:
+        wb, ws = create_default_workbook()
     
     # 找到数据开始行（跳过表头）
     start_row = 2
@@ -236,6 +286,10 @@ def main():
     output_folder_name = sys.argv[2] if len(sys.argv) > 2 else "已整理"
     
     result = process_invoices(folder_path, output_folder_name)
+
+    if result.get("error"):
+        print(f"\n❌ {result['error']}")
+        sys.exit(1)
     
     print("\n" + "="*50)
     print("处理完成!")

@@ -17,7 +17,7 @@
 - ✅ **智能重命名** - 按 `金额_摘要_发票号码.pdf` 格式重命名
 - ✅ **原文件保护** - 原文件保持不变，复制到新文件夹
 - ✅ **Excel 导出** - 自动生成费用报销清单明细表
-- ✅ **内置模板** - 无需每次指定 Excel 模板
+- ✅ **模板回退** - 有模板时使用模板，无模板时自动生成默认表头
 
 ## 📦 安装
 
@@ -94,7 +94,9 @@ python scripts/organize_invoices.py "~/Downloads/2026-02-invoices" "已报销"
    - 责任人（留空）
    - 发票号
    - 摘要
-   - 合计行（自动公式计算）
+   - 合计行（自动公式计算或固定值）
+
+如果 `templates/费用报销清单明细表-demo.xlsx` 不存在，脚本会自动创建一个可直接填写的默认工作簿，不会因为缺少模板而中断。
 
 ## 📋 发票信息提取说明
 
@@ -113,7 +115,7 @@ python scripts/organize_invoices.py "~/Downloads/2026-02-invoices" "已报销"
 
 1. **PDF 格式**：仅支持中国增值税电子发票 PDF 格式
 2. **原文件保护**：工具不会修改原始 PDF 文件，仅复制并重命名
-3. **Excel 模板**：使用内置模板 `templates/费用报销清单明细表-demo.xlsx`
+3. **Excel 模板**：优先使用 `templates/费用报销清单明细表-demo.xlsx`，缺失时自动回退到默认表头
 4. **失败处理**：提取失败的发票会记录在控制台输出中
 5. **路径格式**：
    - Windows 使用 `C:/path/to/folder` 或 `C:\path\to\folder`
@@ -141,8 +143,8 @@ weida-invoice-organizer/
 ├── scripts/
 │   ├── organize_invoices.py      # 主脚本
 │   └── extract_invoice_info.py   # 发票信息提取
-├── templates/
-│   └── 费用报销清单明细表-demo.xlsx  # Excel 模板
+├── templates/                      # 可选：Excel 模板目录
+│   └── 费用报销清单明细表-demo.xlsx
 ├── references/
 │   └── invoice-formats.md        # 发票格式参考
 ├── SKILL.md                       # OpenClaw 技能定义

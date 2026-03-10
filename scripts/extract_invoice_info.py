@@ -9,14 +9,37 @@ import pdfplumber
 import re
 import sys
 import json
-from pathlib import Path
-from datetime import datetime
 
 # 修复 Windows 控制台编码问题
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 # Mac/Linux 默认使用 UTF-8，无需特殊处理
+
+
+def clean_text_value(value: str) -> str:
+    """
+    统一清理文本字段，去掉多余空白和明显的占位符。
+    """
+    if not value:
+        return ""
+
+    cleaned = " ".join(value.split()).strip(" ：:")
+    return "" if cleaned in {"方 方", ":", "："} else cleaned
+
+
+def clean_company_name(value: str) -> str:
+    """
+    清理公司名中的占位字符；对明显无效的结果返回空字符串。
+    """
+    cleaned = clean_text_value(value)
+    if not cleaned:
+        return ""
+
+    if not re.search(r'[\u4e00-\u9fffA-Za-z]', cleaned):
+        return ""
+
+    return cleaned
 
 
 def extract_invoice_info(pdf_path: str) -> dict:
@@ -52,12 +75,17 @@ def extract_invoice_info(pdf_path: str) -> dict:
             full_text = ""
             for page in pdf.pages:
                 text = page.extract_text() or ""
-                full_text += text
+                full_text += text + "\n"
             
             result["raw_text"] = full_text
+            compact_text = re.sub(r'\s+', ' ', full_text)
             
             # 提取发票号码 (20 位数字)
             invoice_num_match = re.search(r'发票号码\s*[:：]?\s*(\d{20})', full_text)
+            if not invoice_num_match:
+                invoice_num_match = re.search(r'统一发票监[\s\S]{0,30}?(\d{20})', full_text)
+            if not invoice_num_match:
+                invoice_num_match = re.search(r'(?<!\d)(\d{20})(?!\d)', full_text)
             if invoice_num_match:
                 result["invoice_number"] = invoice_num_match.group(1)
             
@@ -68,6 +96,8 @@ def extract_invoice_info(pdf_path: str) -> dict:
             
             # 提取开票日期
             date_match = re.search(r'开票日期\s*[:：]?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日', full_text)
+            if not date_match:
+                date_match = re.search(r'(?<!\d)(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?!\d)', full_text)
             if date_match:
                 year, month, day = date_match.groups()
                 result["date"] = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
@@ -80,28 +110,45 @@ def extract_invoice_info(pdf_path: str) -> dict:
                 amount_match = re.search(r'价税合计.*?（小写）\s*¥\s*([\d.]+)', full_text)
             if not amount_match:
                 amount_match = re.search(r'价税合计.*?¥\s*([\d.]+)', full_text)
+            if not amount_match:
+                amount_match = re.search(r'票价[:：]?\s*￥?\s*(\d+\.\d{2})', compact_text)
+            if not amount_match:
+                amount_match = re.search(r'￥\s*(\d+\.\d{2})\s*票价[:：]?', compact_text)
+            if not amount_match and ("电子客票" in full_text or "铁路" in full_text):
+                amount_match = re.search(r'￥\s*(\d+\.\d{2})', full_text)
             if amount_match:
                 result["amount"] = float(amount_match.group(1))
             
             # 提取购买方名称
             buyer_match = re.search(r'购买方.*?名称\s*[:：]?\s*([^\n 售方]+)', full_text, re.DOTALL)
             if buyer_match:
-                result["buyer_name"] = buyer_match.group(1).strip()
+                result["buyer_name"] = clean_company_name(buyer_match.group(1))
             
             # 更精确的购买方匹配
             buyer_match2 = re.search(r'买\s+名称\s*[:：]?\s*([^\n 售]+)', full_text)
             if buyer_match2:
-                result["buyer_name"] = buyer_match2.group(1).strip()
+                result["buyer_name"] = clean_company_name(buyer_match2.group(1))
             
             # 提取销售方名称
             seller_match = re.search(r'销售方.*?名称\s*[:：]?\s*([^\n]+)', full_text, re.DOTALL)
             if seller_match:
-                result["seller_name"] = seller_match.group(1).strip()
+                result["seller_name"] = clean_company_name(seller_match.group(1))
             
             # 更精确的销售方匹配
             seller_match2 = re.search(r'售\s+名称\s*[:：]?\s*([^\n]+)', full_text)
             if seller_match2:
-                result["seller_name"] = seller_match2.group(1).strip()
+                result["seller_name"] = clean_company_name(seller_match2.group(1))
+
+            # 某些发票会把购方和销方公司名放在同一行，使用公司名后缀做兜底识别。
+            company_pair_match = re.search(
+                r'\n([^\n]*?(?:公司|酒店|宾馆|中心|集团)[^\n]*?)\s+([^\n]*?(?:公司|酒店|宾馆|中心|集团)[^\n]*?)\n',
+                full_text
+            )
+            if company_pair_match:
+                if not result["buyer_name"]:
+                    result["buyer_name"] = clean_company_name(company_pair_match.group(1))
+                if not result["seller_name"]:
+                    result["seller_name"] = clean_company_name(company_pair_match.group(2))
             
             # 提取项目名称/摘要 (第一行项目)
             # 匹配 *xxx* 格式，取第二个*后的内容
@@ -111,13 +158,16 @@ def extract_invoice_info(pdf_path: str) -> dict:
                 item_text = item_match.group(1).strip()
                 # 只取第一个空格前的内容
                 item_name = item_text.split()[0] if item_text else ""
-                result["item_name"] = item_name
+                result["item_name"] = clean_text_value(item_name)
+
+            if not result["item_name"] and ("电子客票" in full_text or "铁路" in full_text):
+                result["item_name"] = "火车票"
             
             # 如果没有提取到摘要，用销售方名称作为备选
             if not result["item_name"] and result["seller_name"]:
                 # 取销售方名称的关键词（去掉"有限公司"等）
                 name = result["seller_name"]
-                name = re.sub(r'(有限公司 | 有限责任公司 | 公司)', '', name)
+                name = re.sub(r'(有限公司|有限责任公司|公司)', '', name)
                 result["item_name"] = name[:10]  # 限制长度
             
     except Exception as e:
