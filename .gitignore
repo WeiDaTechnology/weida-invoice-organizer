@@ -43,6 +43,8 @@ Thumbs.db
 
 # Excel 输出文件
 *.xlsx
+!templates/
+!templates/*.xlsx
 
 # 日志
 *.log
